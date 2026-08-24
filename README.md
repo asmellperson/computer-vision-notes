@@ -10,8 +10,8 @@
 - 视觉语言模型
 
 ## 当前计划
--[] 梳理现有目标检测项目
--[] 统计目标框尺寸分布
--[] 学习Precision、Recall与mAP
--[] 对比不同训练分辨率
--[] 学习ONNX和TensorRT
+-[ ] 梳理现有目标检测项目
+-[ ] 统计目标框尺寸分布
+-[ ] 学习Precision、Recall与mAP
+-[ ] 对比不同训练分辨率
+-[ ] 学习ONNX和TensorRT
