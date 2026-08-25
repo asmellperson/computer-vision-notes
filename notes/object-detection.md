@@ -4,7 +4,7 @@
 ## 核心基础概念
   ### 1、交并比（IoU）
     intersection over Union：预测框与真实标注框的重叠程度，预测框的交集比上预测框的并集（取值范围0，1）
-    ![Uploading image.png…]()
+    
     常用IoU>=0.5判定为检测成功
   ### 2、Anchor先验框
     一组提前预设好，不同大小，不同长宽比的矩形模板框，不是网络预测出来的
@@ -89,7 +89,6 @@ DETR(2020),把检测定义成集合预测Set Prediction问题：CNN提取特征�
 - CNN持续进化：YOLOv7/v8/v9/v10；RePVGG重参数，解耦头，DFL，无NMS端到端；兼顾速度与精度，工业主流
 - Transformer路线：Swin-Transormer做骨干；混合CNN+Transformer
 - 大模型时代：SAM等基础模型，提示分割/检测，不针对特定数据集训练，支持开放物体
-# YOLO系列架构图
-## YOLOV8
+
 
 
