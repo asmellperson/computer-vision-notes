@@ -89,6 +89,7 @@ DETR(2020),把检测定义成集合预测Set Prediction问题：CNN提取特征�
 - CNN持续进化：YOLOv7/v8/v9/v10；RePVGG重参数，解耦头，DFL，无NMS端到端；兼顾速度与精度，工业主流
 - Transformer路线：Swin-Transormer做骨干；混合CNN+Transformer
 - 大模型时代：SAM等基础模型，提示分割/检测，不针对特定数据集训练，支持开放物体
-
+![Uploading image.png…]()
+![Uploading image.png…]()
 
 
