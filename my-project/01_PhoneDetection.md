@@ -84,88 +84,88 @@ unified_frontend/src/sections/PhoneDetectionSection.tsx
    > 完整链路：用户修改Input->onChange->setForm()->form保存字符串->用户点击保存->onSave={saveConfig}->检查cameraName->检查isAdmin->JSON.parse ROI->Number()字符串转数字->Number.isFinite()检查数字->构造nextConfig->JSON.stringify()->PUT /api/ai/phone-config/{shm_name}->后端—>成功->重新GET->setPhoneConfig() setFrom->React重新渲染
    > 前端发到/api/ai/phone-config/{shm_name}，Vite会把他转到：unified_backend :5000
 # Python后端
-  ## unified_backend
-    前端发送的/api/ai/phone-config/{shm_name},Vite会把他转给unified_backend :5000。
-    统一后端的通配代理路由：@app.api_route("/api/ai/{path:path}",methods=["GET","POST","PUT","PATCH","DELETE","OPTIONS"])：{path:path}表示后面不管跟什么路径，都接住，然后转发给Aivision
-    body = await request.body()：HTTP请求到python后，python就在这里读取，await proxy_client.send(...)：发送上游HTTP
-  ## AiVision：7862
-    AiVision本身是FastAPI(...),它注册了：from api.compat import router as compat_router; app.include_router(compat_router),所以真正的PUT接口在aivision/api/compat.py里面
-    @router.put("/api/ai/phone-config/{shm_name}") def put_phone_config(...):
-        - @router.put()是FastAPI的路由装饰器，意思是：只要收到这个 URL 的 PUT 请求，就执行下面这个函数。（路由Routing）
-        - {shm_name}自动变成Python参数（这个叫路径参数Path Parameter）
-    payload: dict[str, Any]：自动把前端JSON解析成Python字典
-    _user: dict = Depends(require_admin) ： 前端权限不可行，后端必须在检查(依赖注入 Dependency Injection)
-    Depends(xxx):FastAPI非常核心的东西，表示当前函数需要一个“xxx服务”，FastAPI 帮我拿过来。
-    def _put_legacy_config（legacy_name,shm_name,payload,feature_servuce）:正式处理手机配置：legacy_name = "phone"："phone": "detect_phone",旧名字phone——（映射新架构名字）>detect_phone
-    spec = get_spec("detect_phone"),此时SPEC== FeatureSpec(name="detect_phone",consumer_cls=PhoneConsumer,orm_class=PhoneConfigORM,config_schema=PhoneConfigSchema,required_models=("yolo_phone",),)，spec里面其实带着整套信息：detect_phone:phoneConsumer,phoneConfigORM,PhoneConfigSchema,yolo_phone(features-first架构一个关键的地方)
-    normalized =normalize_legacy_payload(spec,payload):项目以前可能有不同的格式，兼容层这里统一成{"enable": true,"value": {...},"alarm": {...}}
-    spec.config_schema：对手机检测来说是PhoneConfigSchema，PhoneConfigSchema.model_validate(normalized)
-    CONF_THRESHOLD: float = Field(0.7, ge=0, le=1)：Pydantic数据校验，后端的schema
-    result = feature_service.save_config(spec,shm_name,validated)：校验通过后进入Service层，进入AiVision/features/_base/service.py（API层，负责HTTP，service层，负责业务操作，ORM/Database负责数据库，不要把所有东西写在一个FastAPI函数里）
-    save_config():
-      - 先找摄像头camera = self._get_camera_by_key(session,shm_name)
-      - 然后查询手机配置检测表(ORM 对象关系映射)：cfg = (session.query(spec.orm_class).filter_by(camera_id=camera.id).first())：spec.orm_class就是PhoneConfigORM（SELECT*FROM 手机检测配置表 WHERE camera_id=?）
-        - Python不直接手写SQL，而是session.query(...),背后由SQLAIchemy生成SQL
-      - 数据库没有记录就创建一条cfg = spec.orm_class(camera_id=camera.id)     session.add(cfg)，属于upsert风格的处理：查，有就更新，没有就创建
-     - 把配置分别保存到ORM对象：new_enable = bool(payload.get("enable", False))，cfg.apply_value_dict(payload.get("value") or {})，cfg.apply_alarm_dict(payload.get("alarm") or {})
-     - session.flush()：把当前ORM的变更同步给数据库事务，with session_scope() as session:退出上下文后，session_scope会完成commit，所以：Python ORM——>flush——>数据库事务——>commit——>真正保存
-     - config_cache.reload()：数据库变了，把运行时配置缓存重新加载（因为通常是数据库->Cache->实时算法）
-     - config_event_bus.publish(ConfigChangeEvent(change_type=f"{spec.name}_config_updated",..)):手机检测变成detect_phone_config_updated，这时候已经进入事件驱动架构
-     - 项目是一个发布/订阅系统（publisher发布者->Event Bus->subscriber订阅者）保存配置的时候FetureConfigService->publish->detect_phone_config_update
-     - 谁订阅了这个事件？Orchestrator  config_event_bus.subscribe_wildcard(self._on_config_change)：所有配置变更事件我都监听，所以detect_phone_config_update()->Orchestrator._on_config_change()
-     - Orchestrator根据feature找Consumer（数据处理模块）：事件detect_phone_config_updated被拆成feature = detect_phone，action  = config_updated，代码最终：consumer.update_config(cam_id)
-     - PhoneConsumer为什么可以立即拿到新参数：因为它继承了：BaseFunctionConsumer，里面有：def update_config
-       >热更新Hot Reload： 数据库保存->全局Config_cache刷新->发布事件->Orchestrator->PhoneConsumer.update_config->consumer自己的config_cache更新，这样就不需要重启AiVision
-    > 保存配置的完整闭环：
-        - React Input：页面输入框，用户修改参数
-        - form ： 前端表单对象，JS对象，存着页面上填好的全部配置
-        - saveConfig()：点击保存按钮触发的函数，前端业务函数
-        - JSON.stringify()：JSON对象转JSON字符串，HTTP接口只能传文本JSON
-        - HTTP PUT ： 发起PUT请求，把配置提交出去
-        - Vite:3000：前端页面地址（Vite代理转发）
-        - unified_backend:5000：统一网关服务
-        - _proxy()：网关内部的代理转发函数，把请求转发给AI视觉服务（类似 Vite Proxy），这是后端网关的代理，不能前端开发代理，网关做请求中转
-        - HTTP PUT：网关重新发起一起PUT请求，送到真正的业务服务
-        - AiVision:7862
-        - auth middleware：鉴权中间件，请求先走到中间件，校验token，判断用户是否登录
-        - require_admin ： 权限校验，判断这个用户是不是管理员，middleware、require_admin：只做拦截校验，不改业务数据，校验通过才放行往下走
-        - put_phone_config()：接口路由处理函数，真正接收这个配置请求的入口handler
-        _ normalize_legacy_payload()：老数据兼容函数，把前端传过来的数据做格式调整，比如老版本接口传的字段格式不对，部分字段缺失，在这里统一整理成规范格式，适配新旧数据
-        - PhoneConfigSchema+Pydantic校验:Schema:数据结构定义；Pydantic做强校验：字段类型、范围、必填项检查
-        - FeatureConfigService.save_config()：业务服务层，封装保存配置逻辑
-        - SQLAlchemy ORM：Python ORM框架，不用手写SQL，把对象转成数据库语句
-        - MySQL：数据真正落地
-        - config_cache.reload()：刷新全局共享参数，把MySQL最新配置加载进内存
-        - config_event_bus.publish()：推送配置变更事件，通知系统内所有模块
-        - Orchestrator：编排调度器，接收事件，分发通知给对应业务模块
-        - PhoneConsumer.update_config()：手机检测模块，收到事件通知，更新模块自己的本地化部署。下一帧直接使用新参数
-    > api/compat.py:负责：HTTP、权限、参数入口
-    > Schema PhoneConfigSchema:负责：数据格式，范围校验
-    > Service FeatureConfigService:负责业务读写
-    > ORM PhoneConfigORM：负责Python与数据库表交互
-    > Database MySQL
-    > Cache+Event:负责 让实时系统立即拿到新配置
-    > Consumer PhoneConsumer:负责真正的视觉业务逻辑（PhoneConsumer手机业务处理器）
-  ## PhoneConsumer手机检测业务处理器
-    AiVision/features/detect_phone/consumer.py
-    - 实时链路：摄像头采集进程->最新完整画面->BaseFunctionConsumer主循环->裁剪ROI->PhoneConsumer._process()->手机模型+人体模型->空间关联->简单跟踪->连续次数->持续时间->是否报警
-    - 父类负责拿帧，裁ROI，控制处理频率，最后才调用子类的_process(),PhoneConsumer接收到的是处理好的roi_list
-    - 父类实现了：读取最新帧、ROI剪裁、线程主循环、推理任务调度、告警触发、结果画面缓存、配置热更新
-    - self._tracks: dict[int, dict[int, dict]] = {}：手机检测自己多维护两个状态：保存跨帧的手机跟踪状态，大致结构就是：摄像头1下有手机轨迹1，手机轨迹2，每个手机轨迹下又有第一次出现的时间，最近出现的时间，bbox，已连续识别次数
-    - self._next_track_id: dict[int, int] = {}：负责给手机对象编号，这里不是ByteTrack，是自己写的一套非常轻量的跨帧匹配逻辑（通过IoU或者中心点距离，判断两帧是不是一个手机）
-    - def _process(self,roi_list,camera_id):给一台摄像头当前所有的ROI，返回每个ROI是否应该报警，这里的ROI是由父类的_get_roi()函数得到（职责分离）
-    - cfg = self._value_config( self.config_cache.get(camera_id, {}):读取运行配置（之前有前端->MySQL->config_cache.reload()->PhoneConsumer.update_config()）
-    - self.dispatch_inference_sync(...):将ROI交给yolo_phone模型去检测，等结果回来：dispatch：把任务推到推理模块，inference：模型推理，sync：当前业务逻辑等待结果返回
-    - PhoneConsumer自己没有执行YOLO,而是：PhoneConsumer线程->提交推理任务->模型推理进程->YOLO->结果返回
-    - task_meta={}:告诉模型进程，推理置信度和IOU
-    - 手机检测完还要跑一次人体检测self.dispatch_inference_sync(...)里面传人体检测模型，其中timeout=0.6：表示最多等待0.6秒
-    - _results_by_roi()：整理模型返回值，做list-dict索引化，后续按ROI编号快速拿结果：phone_results.get(roi_index)
-    - roi_offsets：将ROI坐标映射回原图，因为roi在原图上剪裁了之后，检测到的手机是相对ROI内部的坐标，所以需要offset=(ox,oy)
-    - candidates = self._qualified_phone_detections(...):手机检测框，1、判断是不是靠近人体区域，2、和上一帧做匹配，3、判断连续次数和持续时间，这里是真正的业务判断逻辑
-    - 最终报警条件：只要有一个ROI需要报警就报警
-    - self._prune_tracks():清理过期轨迹，超过TTL，将当前手机轨迹从_tracks中删除。
-    总结：
-      收到当前摄像头的ROI->读取这台摄像头的配置->调用yolo_phone得到手机框->如果开启人体关联，调用yolo_human得到人体框->遍历每个ROI->把手机框和人体框拿出来->过滤不合理的手机框->和历史手机轨迹进行匹配->统计出现次数和持续时间->只要有一个手机被 confirmed->这个 ROI = 报警->清理消失太久的手机轨迹->返回结果
+## unified_backend
+- 前端发送的/api/ai/phone-config/{shm_name},Vite会把他转给unified_backend :5000。
+- 统一后端的通配代理路由：@app.api_route("/api/ai/{path:path}",methods=["GET","POST","PUT","PATCH","DELETE","OPTIONS"])：{path:path}表示后面不管跟什么路径，都接住，然后转发给Aivision
+- body = await request.body()：HTTP请求到python后，python就在这里读取，await proxy_client.send(...)：发送上游HTTP
+## AiVision：7862
+  AiVision本身是FastAPI(...),它注册了：from api.compat import router as compat_router; app.include_router(compat_router),所以真正的PUT接口在aivision/api/compat.py里面
+  @router.put("/api/ai/phone-config/{shm_name}") def put_phone_config(...):
+      - @router.put()是FastAPI的路由装饰器，意思是：只要收到这个 URL 的 PUT 请求，就执行下面这个函数。（路由Routing）
+      - {shm_name}自动变成Python参数（这个叫路径参数Path Parameter）
+  payload: dict[str, Any]：自动把前端JSON解析成Python字典
+  _user: dict = Depends(require_admin) ： 前端权限不可行，后端必须在检查(依赖注入 Dependency Injection)
+  Depends(xxx):FastAPI非常核心的东西，表示当前函数需要一个“xxx服务”，FastAPI 帮我拿过来。
+  def _put_legacy_config（legacy_name,shm_name,payload,feature_servuce）:正式处理手机配置：legacy_name = "phone"："phone": "detect_phone",旧名字phone——（映射新架构名字）>detect_phone
+  spec = get_spec("detect_phone"),此时SPEC== FeatureSpec(name="detect_phone",consumer_cls=PhoneConsumer,orm_class=PhoneConfigORM,config_schema=PhoneConfigSchema,required_models=("yolo_phone",),)，spec里面其实带着整套信息：detect_phone:phoneConsumer,phoneConfigORM,PhoneConfigSchema,yolo_phone(features-first架构一个关键的地方)
+  normalized =normalize_legacy_payload(spec,payload):项目以前可能有不同的格式，兼容层这里统一成{"enable": true,"value": {...},"alarm": {...}}
+  spec.config_schema：对手机检测来说是PhoneConfigSchema，PhoneConfigSchema.model_validate(normalized)
+  CONF_THRESHOLD: float = Field(0.7, ge=0, le=1)：Pydantic数据校验，后端的schema
+  result = feature_service.save_config(spec,shm_name,validated)：校验通过后进入Service层，进入AiVision/features/_base/service.py（API层，负责HTTP，service层，负责业务操作，ORM/Database负责数据库，不要把所有东西写在一个FastAPI函数里）
+  save_config():
+    - 先找摄像头camera = self._get_camera_by_key(session,shm_name)
+    - 然后查询手机配置检测表(ORM 对象关系映射)：cfg = (session.query(spec.orm_class).filter_by(camera_id=camera.id).first())：spec.orm_class就是PhoneConfigORM（SELECT*FROM 手机检测配置表 WHERE camera_id=?）
+      - Python不直接手写SQL，而是session.query(...),背后由SQLAIchemy生成SQL
+    - 数据库没有记录就创建一条cfg = spec.orm_class(camera_id=camera.id)     session.add(cfg)，属于upsert风格的处理：查，有就更新，没有就创建
+   - 把配置分别保存到ORM对象：new_enable = bool(payload.get("enable", False))，cfg.apply_value_dict(payload.get("value") or {})，cfg.apply_alarm_dict(payload.get("alarm") or {})
+   - session.flush()：把当前ORM的变更同步给数据库事务，with session_scope() as session:退出上下文后，session_scope会完成commit，所以：Python ORM——>flush——>数据库事务——>commit——>真正保存
+   - config_cache.reload()：数据库变了，把运行时配置缓存重新加载（因为通常是数据库->Cache->实时算法）
+   - config_event_bus.publish(ConfigChangeEvent(change_type=f"{spec.name}_config_updated",..)):手机检测变成detect_phone_config_updated，这时候已经进入事件驱动架构
+   - 项目是一个发布/订阅系统（publisher发布者->Event Bus->subscriber订阅者）保存配置的时候FetureConfigService->publish->detect_phone_config_update
+   - 谁订阅了这个事件？Orchestrator  config_event_bus.subscribe_wildcard(self._on_config_change)：所有配置变更事件我都监听，所以detect_phone_config_update()->Orchestrator._on_config_change()
+   - Orchestrator根据feature找Consumer（数据处理模块）：事件detect_phone_config_updated被拆成feature = detect_phone，action  = config_updated，代码最终：consumer.update_config(cam_id)
+   - PhoneConsumer为什么可以立即拿到新参数：因为它继承了：BaseFunctionConsumer，里面有：def update_config
+     >热更新Hot Reload： 数据库保存->全局Config_cache刷新->发布事件->Orchestrator->PhoneConsumer.update_config->consumer自己的config_cache更新，这样就不需要重启AiVision
+  > 保存配置的完整闭环：
+      - React Input：页面输入框，用户修改参数
+      - form ： 前端表单对象，JS对象，存着页面上填好的全部配置
+      - saveConfig()：点击保存按钮触发的函数，前端业务函数
+      - JSON.stringify()：JSON对象转JSON字符串，HTTP接口只能传文本JSON
+      - HTTP PUT ： 发起PUT请求，把配置提交出去
+      - Vite:3000：前端页面地址（Vite代理转发）
+      - unified_backend:5000：统一网关服务
+      - _proxy()：网关内部的代理转发函数，把请求转发给AI视觉服务（类似 Vite Proxy），这是后端网关的代理，不能前端开发代理，网关做请求中转
+      - HTTP PUT：网关重新发起一起PUT请求，送到真正的业务服务
+      - AiVision:7862
+      - auth middleware：鉴权中间件，请求先走到中间件，校验token，判断用户是否登录
+      - require_admin ： 权限校验，判断这个用户是不是管理员，middleware、require_admin：只做拦截校验，不改业务数据，校验通过才放行往下走
+      - put_phone_config()：接口路由处理函数，真正接收这个配置请求的入口handler
+      _ normalize_legacy_payload()：老数据兼容函数，把前端传过来的数据做格式调整，比如老版本接口传的字段格式不对，部分字段缺失，在这里统一整理成规范格式，适配新旧数据
+      - PhoneConfigSchema+Pydantic校验:Schema:数据结构定义；Pydantic做强校验：字段类型、范围、必填项检查
+      - FeatureConfigService.save_config()：业务服务层，封装保存配置逻辑
+      - SQLAlchemy ORM：Python ORM框架，不用手写SQL，把对象转成数据库语句
+      - MySQL：数据真正落地
+      - config_cache.reload()：刷新全局共享参数，把MySQL最新配置加载进内存
+      - config_event_bus.publish()：推送配置变更事件，通知系统内所有模块
+      - Orchestrator：编排调度器，接收事件，分发通知给对应业务模块
+      - PhoneConsumer.update_config()：手机检测模块，收到事件通知，更新模块自己的本地化部署。下一帧直接使用新参数
+  > api/compat.py:负责：HTTP、权限、参数入口
+  > Schema PhoneConfigSchema:负责：数据格式，范围校验
+  > Service FeatureConfigService:负责业务读写
+  > ORM PhoneConfigORM：负责Python与数据库表交互
+  > Database MySQL
+  > Cache+Event:负责 让实时系统立即拿到新配置
+  > Consumer PhoneConsumer:负责真正的视觉业务逻辑（PhoneConsumer手机业务处理器）
+## PhoneConsumer手机检测业务处理器
+  AiVision/features/detect_phone/consumer.py
+  - 实时链路：摄像头采集进程->最新完整画面->BaseFunctionConsumer主循环->裁剪ROI->PhoneConsumer._process()->手机模型+人体模型->空间关联->简单跟踪->连续次数->持续时间->是否报警
+  - 父类负责拿帧，裁ROI，控制处理频率，最后才调用子类的_process(),PhoneConsumer接收到的是处理好的roi_list
+  - 父类实现了：读取最新帧、ROI剪裁、线程主循环、推理任务调度、告警触发、结果画面缓存、配置热更新
+  - self._tracks: dict[int, dict[int, dict]] = {}：手机检测自己多维护两个状态：保存跨帧的手机跟踪状态，大致结构就是：摄像头1下有手机轨迹1，手机轨迹2，每个手机轨迹下又有第一次出现的时间，最近出现的时间，bbox，已连续识别次数
+  - self._next_track_id: dict[int, int] = {}：负责给手机对象编号，这里不是ByteTrack，是自己写的一套非常轻量的跨帧匹配逻辑（通过IoU或者中心点距离，判断两帧是不是一个手机）
+  - def _process(self,roi_list,camera_id):给一台摄像头当前所有的ROI，返回每个ROI是否应该报警，这里的ROI是由父类的_get_roi()函数得到（职责分离）
+  - cfg = self._value_config( self.config_cache.get(camera_id, {}):读取运行配置（之前有前端->MySQL->config_cache.reload()->PhoneConsumer.update_config()）
+  - self.dispatch_inference_sync(...):将ROI交给yolo_phone模型去检测，等结果回来：dispatch：把任务推到推理模块，inference：模型推理，sync：当前业务逻辑等待结果返回
+  - PhoneConsumer自己没有执行YOLO,而是：PhoneConsumer线程->提交推理任务->模型推理进程->YOLO->结果返回
+  - task_meta={}:告诉模型进程，推理置信度和IOU
+  - 手机检测完还要跑一次人体检测self.dispatch_inference_sync(...)里面传人体检测模型，其中timeout=0.6：表示最多等待0.6秒
+  - _results_by_roi()：整理模型返回值，做list-dict索引化，后续按ROI编号快速拿结果：phone_results.get(roi_index)
+  - roi_offsets：将ROI坐标映射回原图，因为roi在原图上剪裁了之后，检测到的手机是相对ROI内部的坐标，所以需要offset=(ox,oy)
+  - candidates = self._qualified_phone_detections(...):手机检测框，1、判断是不是靠近人体区域，2、和上一帧做匹配，3、判断连续次数和持续时间，这里是真正的业务判断逻辑
+  - 最终报警条件：只要有一个ROI需要报警就报警
+  - self._prune_tracks():清理过期轨迹，超过TTL，将当前手机轨迹从_tracks中删除。
+  总结：
+    收到当前摄像头的ROI->读取这台摄像头的配置->调用yolo_phone得到手机框->如果开启人体关联，调用yolo_human得到人体框->遍历每个ROI->把手机框和人体框拿出来->过滤不合理的手机框->和历史手机轨迹进行匹配->统计出现次数和持续时间->只要有一个手机被 confirmed->这个 ROI = 报警->清理消失太久的手机轨迹->返回结果
 ## 知识：
   - .find():数组里找元素
   - ？.:安全访问可能不存在的对象
