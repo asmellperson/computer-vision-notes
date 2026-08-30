@@ -89,33 +89,33 @@ unified_frontend/src/sections/PhoneDetectionSection.tsx
 - 统一后端的通配代理路由：@app.api_route("/api/ai/{path:path}",methods=["GET","POST","PUT","PATCH","DELETE","OPTIONS"])：{path:path}表示后面不管跟什么路径，都接住，然后转发给Aivision
 - body = await request.body()：HTTP请求到python后，python就在这里读取，await proxy_client.send(...)：发送上游HTTP
 ## AiVision：7862
-  AiVision本身是FastAPI(...),它注册了：from api.compat import router as compat_router; app.include_router(compat_router),所以真正的PUT接口在aivision/api/compat.py里面
-  @router.put("/api/ai/phone-config/{shm_name}") def put_phone_config(...):
-      - @router.put()是FastAPI的路由装饰器，意思是：只要收到这个 URL 的 PUT 请求，就执行下面这个函数。（路由Routing）
-      - {shm_name}自动变成Python参数（这个叫路径参数Path Parameter）
-  payload: dict[str, Any]：自动把前端JSON解析成Python字典
-  _user: dict = Depends(require_admin) ： 前端权限不可行，后端必须在检查(依赖注入 Dependency Injection)
-  Depends(xxx):FastAPI非常核心的东西，表示当前函数需要一个“xxx服务”，FastAPI 帮我拿过来。
-  def _put_legacy_config（legacy_name,shm_name,payload,feature_servuce）:正式处理手机配置：legacy_name = "phone"："phone": "detect_phone",旧名字phone——（映射新架构名字）>detect_phone
-  spec = get_spec("detect_phone"),此时SPEC== FeatureSpec(name="detect_phone",consumer_cls=PhoneConsumer,orm_class=PhoneConfigORM,config_schema=PhoneConfigSchema,required_models=("yolo_phone",),)，spec里面其实带着整套信息：detect_phone:phoneConsumer,phoneConfigORM,PhoneConfigSchema,yolo_phone(features-first架构一个关键的地方)
-  normalized =normalize_legacy_payload(spec,payload):项目以前可能有不同的格式，兼容层这里统一成{"enable": true,"value": {...},"alarm": {...}}
-  spec.config_schema：对手机检测来说是PhoneConfigSchema，PhoneConfigSchema.model_validate(normalized)
-  CONF_THRESHOLD: float = Field(0.7, ge=0, le=1)：Pydantic数据校验，后端的schema
-  result = feature_service.save_config(spec,shm_name,validated)：校验通过后进入Service层，进入AiVision/features/_base/service.py（API层，负责HTTP，service层，负责业务操作，ORM/Database负责数据库，不要把所有东西写在一个FastAPI函数里）
-  save_config():
+- AiVision本身是FastAPI(...),它注册了：from api.compat import router as compat_router; app.include_router(compat_router),所以真正的PUT接口在aivision/api/compat.py里面
+- @router.put("/api/ai/phone-config/{shm_name}") def put_phone_config(...):
+  - @router.put()是FastAPI的路由装饰器，意思是：只要收到这个 URL 的 PUT 请求，就执行下面这个函数。（路由Routing）
+  - {shm_name}自动变成Python参数（这个叫路径参数Path Parameter）
+- payload: dict[str, Any]：自动把前端JSON解析成Python字典
+- _user: dict = Depends(require_admin) ： 前端权限不可行，后端必须在检查(依赖注入 Dependency Injection)
+- Depends(xxx):FastAPI非常核心的东西，表示当前函数需要一个“xxx服务”，FastAPI 帮我拿过来。
+- def _put_legacy_config（legacy_name,shm_name,payload,feature_servuce）:正式处理手机配置：legacy_name = "phone"："phone":"detect_phone",旧名字phone——（映射新架构名字）>detect_phone
+- spec = get_spec("detect_phone"),此时SPEC== FeatureSpec(name="detect_phone",consumer_cls=PhoneConsumer,orm_class=PhoneConfigORM,config_schema=PhoneConfigSchema,required_models=("yolo_phone",),)，spec里面其实带着整套信息：detect_phone:phoneConsumer,phoneConfigORM,PhoneConfigSchema,yolo_phone(features-first架构一个关键的地方)
+- normalized =normalize_legacy_payload(spec,payload):项目以前可能有不同的格式，兼容层这里统一成{"enable": true,"value": {...},"alarm": {...}}
+- spec.config_schema：对手机检测来说是PhoneConfigSchema，PhoneConfigSchema.model_validate(normalized)
+- CONF_THRESHOLD: float = Field(0.7, ge=0, le=1)：Pydantic数据校验，后端的schema
+- result = feature_service.save_config(spec,shm_name,validated)：校验通过后进入Service层，进入AiVision/features/_base/service.py（API层，负责HTTP，service层，负责业务操作，ORM/Database负责数据库，不要把所有东西写在一个FastAPI函数里）
+- save_config():
     - 先找摄像头camera = self._get_camera_by_key(session,shm_name)
     - 然后查询手机配置检测表(ORM 对象关系映射)：cfg = (session.query(spec.orm_class).filter_by(camera_id=camera.id).first())：spec.orm_class就是PhoneConfigORM（SELECT*FROM 手机检测配置表 WHERE camera_id=?）
       - Python不直接手写SQL，而是session.query(...),背后由SQLAIchemy生成SQL
-    - 数据库没有记录就创建一条cfg = spec.orm_class(camera_id=camera.id)     session.add(cfg)，属于upsert风格的处理：查，有就更新，没有就创建
-   - 把配置分别保存到ORM对象：new_enable = bool(payload.get("enable", False))，cfg.apply_value_dict(payload.get("value") or {})，cfg.apply_alarm_dict(payload.get("alarm") or {})
-   - session.flush()：把当前ORM的变更同步给数据库事务，with session_scope() as session:退出上下文后，session_scope会完成commit，所以：Python ORM——>flush——>数据库事务——>commit——>真正保存
-   - config_cache.reload()：数据库变了，把运行时配置缓存重新加载（因为通常是数据库->Cache->实时算法）
-   - config_event_bus.publish(ConfigChangeEvent(change_type=f"{spec.name}_config_updated",..)):手机检测变成detect_phone_config_updated，这时候已经进入事件驱动架构
-   - 项目是一个发布/订阅系统（publisher发布者->Event Bus->subscriber订阅者）保存配置的时候FetureConfigService->publish->detect_phone_config_update
-   - 谁订阅了这个事件？Orchestrator  config_event_bus.subscribe_wildcard(self._on_config_change)：所有配置变更事件我都监听，所以detect_phone_config_update()->Orchestrator._on_config_change()
-   - Orchestrator根据feature找Consumer（数据处理模块）：事件detect_phone_config_updated被拆成feature = detect_phone，action  = config_updated，代码最终：consumer.update_config(cam_id)
-   - PhoneConsumer为什么可以立即拿到新参数：因为它继承了：BaseFunctionConsumer，里面有：def update_config
-     >热更新Hot Reload： 数据库保存->全局Config_cache刷新->发布事件->Orchestrator->PhoneConsumer.update_config->consumer自己的config_cache更新，这样就不需要重启AiVision
+- 数据库没有记录就创建一条cfg = spec.orm_class(camera_id=camera.id)     session.add(cfg)，属于upsert风格的处理：查，有就更新，没有就创建
+- 把配置分别保存到ORM对象：new_enable = bool(payload.get("enable", False))，cfg.apply_value_dict(payload.get("value") or {})，cfg.apply_alarm_dict(payload.get("alarm") or {})
+- session.flush()：把当前ORM的变更同步给数据库事务，with session_scope() as session:退出上下文后，session_scope会完成commit，所以：Python ORM——>flush——>数据库事务——>commit——>真正保存
+- config_cache.reload()：数据库变了，把运行时配置缓存重新加载（因为通常是数据库->Cache->实时算法）
+- config_event_bus.publish(ConfigChangeEvent(change_type=f"{spec.name}_config_updated",..)):手机检测变成detect_phone_config_updated，这时候已经进入事件驱动架构
+- 项目是一个发布/订阅系统（publisher发布者->Event Bus->subscriber订阅者）保存配置的时候FetureConfigService->publish->detect_phone_config_update
+- 谁订阅了这个事件？Orchestrator  config_event_bus.subscribe_wildcard(self._on_config_change)：所有配置变更事件我都监听，所以detect_phone_config_update()->Orchestrator._on_config_change()
+- Orchestrator根据feature找Consumer（数据处理模块）：事件detect_phone_config_updated被拆成feature = detect_phone，action  = config_updated，代码最终：consumer.update_config(cam_id)
+- PhoneConsumer为什么可以立即拿到新参数：因为它继承了：BaseFunctionConsumer，里面有：def update_config
+   >热更新Hot Reload： 数据库保存->全局Config_cache刷新->发布事件->Orchestrator->PhoneConsumer.update_config->consumer自己的config_cache更新，这样就不需要重启AiVision
   > 保存配置的完整闭环：
       - React Input：页面输入框，用户修改参数
       - form ： 前端表单对象，JS对象，存着页面上填好的全部配置
