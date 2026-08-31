@@ -1,5 +1,12 @@
 # 手机检测前端业务页面组件
-unified_frontend/src/sections/PhoneDetectionSection.tsx
+- 1、unified_frontend/src/sections/PhoneDetectionSection.tsx：页面
+- 2、api/compat.py:接收手机配置API
+- 3、PhoneConfigSchema：检查参数
+- 4、FeatureConfigService：保存配置
+- 5、BaseFunctionConsumer实时检测通用框架
+- 6、PhoneConsumer:手机业务判断
+- 7、BaseModelWorker：模型进程通用框架
+- 8、YOloDetectorWorker:真正model.predict()
 ## React：
 - usestate：解决页面运行过程中，需要保存一些会变化的，React响应式UI的核心
 - useeffect：页面第一次打开时加载一次指定的东西（useEffect(() => {loadCameras()}, [])）（加载摄像头）
@@ -166,8 +173,37 @@ unified_frontend/src/sections/PhoneDetectionSection.tsx
   - self._prune_tracks():清理过期轨迹，超过TTL，将当前手机轨迹从_tracks中删除。
   总结：
     收到当前摄像头的ROI->读取这台摄像头的配置->调用yolo_phone得到手机框->如果开启人体关联，调用yolo_human得到人体框->遍历每个ROI->把手机框和人体框拿出来->过滤不合理的手机框->和历史手机轨迹进行匹配->统计出现次数和持续时间->只要有一个手机被 confirmed->这个 ROI = 报警->清理消失太久的手机轨迹->返回结果
+## dispatch_inference_sync
+  - 给本次推理任务生成唯一编号
+  - 一个ROI会被包装成一个任务：ROI图片、摄像头是谁、哪个业务请求、哪个模型、模型参数全部包装到一个Python dict里
+  - self.infer_dict[model_name].put(task,timeout=0.02):进入多进程队列：multiprocessing.Queue，也就是跨进程任务通道，就是PhoneConsumer线程，包装成任务，给到yolo_phone队列，得到这样一个YOLO模型进程
+  - IPC：进程间通信：不同进程拥有独立内存空间：multiprocessing.Queue进行进程间通信
+  - AiVision/platform/inference/base_worker.py：模型进程一直在运行，有没有新任务?有就拿出来执行YOLO，没有就继续等。所以：PhoneConsumer-put()>任务队列-get()>YOLO进程
+  - platform/inference/workers/yolo_detector.py：真正执行YOLO的地方，完整关系：原图，裁ROI，Queue，YOLO：这样既可以降低计算量，也可以减少无关区域误检
+  - target_queue.put(result,timeout=0.5)：PhoneConsumer线程->infer_queue->YOLO模型进程->model.predict()->result_queue->PhoneConsumer线程。所以有两条Queue，一条是infer_queue,一条是result_queue
+  - outcome = self.result_queue.get(...):PhoneConsumer在等结果
+  - - 会检查request_id
+> 总结PhoneConsumer：拿到ROI->包装成task->放进YOLO_Phone Queue->YOLO模型进程->Queue取任务->model.predict()->整理bbox/confidence->放入result_queue,  ->PhoneConsumer线程——>result_queue取结果——>检查request_id——>拿到手机框
+> 线程像是一个AiVision主程序里的不同工作流，进程则是隔离出来的独立运行单元（中间不能随便共享普通Python变量），使用multiprocessing.Queue来传任务喝结果
+## 检测逻辑
+  - 先检查bbox是不是完整的[x1,y1,x2,y2]
+  - ROI坐标还原成原图坐标
+  - 做人体关联：手机框附近没有人会被过滤掉，人体左右扩展约18%，手机中心点在人体的扩展区域就认为手机和这个人有关联（这是第一种判断）
+  - 第二种判断，框有明显重叠，计算交集面积/手机框的面积，大于0.08就认为相关（计算手机有多少比例落进人体区间）
+  - 通过以上判断后开始跟踪，判断当前手机是不是上一轮看到的手机，两个判断条件：
+    - 1、两个框重叠程度够高：iou大于最小iou
+    - 2、两个框的中心距离<=0.6
+  - 匹配不到就说明出现了一个新的手机目标，中间消失太久，也会重新计算，不能把相隔很久的两个检测硬当成连续行为。
+  - 检测次数hits>=3,并且持续时间duration>=1.2秒才会确认
+  - 最后把全部信息塞回结果
+>三层检测逻辑：1、YOLO识别到手机，2、几何关系：手机中心点是否在人体扩展范围内，以及手机落在人体区域的比例，3、时间逻辑：判断是否连续出现以及持续的时间
+  - 过期轨迹删掉：_prune_tracks
+## 报警逻辑
+  - PhoneConsumer._process()得到检测判断，post_process()画检测框，_handle_alarm()做告警处理，以上都是父类做的
+  - post_process():负责把结果画回视频，先拿完整视频帧，遍历刚才检测出来的手机，把ROI坐标重新变回原图坐标，OpenCV画框，画完以后保存这台摄像头最新的检测后画面，之后API和前端监控页可以取这里的最新结果画面。
+  - _handle_alarm():父类统一提供：
 ## 知识：
-  - .find():数组里找元素
+  - .find():数组里找元素，
   - ？.:安全访问可能不存在的对象
   - ...prev:展开/复制对象
   - setState(prev=>...)：React更新旧状态
