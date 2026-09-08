@@ -8,3 +8,15 @@
   - 0.0.0.0：监听本机所有网络接口，允许任何来源的请求访问中国服务
   - 127.0.0.1(localhost)：只有本地可以访问，外部连不上
   - 192.168.x.x:只能通过该ip访问
+- 3、用Python操作SQL:
+    - select(Model)  SELECT 查询
+    - .where(...)  WHERE 条件
+    - session.scalar(...)  查一个对象
+    - session.scalars(...).all() 查多个对象
+    - session.add(obj) 准备 INSERT
+    - 修改 obj.xxx 准备 UPDATE
+    - session.delete(obj) 准备删除这个对象
+    - session.execute(delete(...)) 执行条件/批量 DELETE
+    - session.flush() 把 SQL 发给数据库, 但还没最终 commit
+    - session.commit() 正式提交事务
+    - session.rollback() 撤销本次事务
