@@ -123,7 +123,7 @@ def create_item(db:Session,item:ItemCreate) -> ItemModel:
     price=item.price
     description=item.description
 )
-  db.add(db_item)
+  db.add(db_item)                            # 要把SQLAlachemy对象传入才能对数据库进行操作
   db.commit()
   db.refresh(db_item)
   return db_item
@@ -215,11 +215,12 @@ from xxx import ItemModel
 from routers.item import router as item_router
 
 #这段代码是FastAPI的应用生命周期管理，用来在服务启动时做初始化，在服务关闭时做清理
-@asynccontextmanager
+@asynccontextmanager         # 异步上下文管理器
 async def lifespan(app: FastAPI):
   # 应用启动时自动建表
   Base.metadata.create_all(bind=engine)
-  yield
+  yield              # 应用运行中
+  # 关闭时执行（ctrl+C，重启、进程退出等）
   engine.dispose() # 释放数据库连接池
 
 app = FastAPI(title='FastAPI + SQAlchemy示例',lifespan=lifespan)
