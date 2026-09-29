@@ -12,22 +12,25 @@ HTML全称是Hypertext Markup Language（超文本标记语言），其通过一
 <br>
 <hr>
 ```
-> html文件开头输入！号可以不用自己手动输入<!DOCTYPE html>、<html></html><head></head><body></body></html>
-> <b>字体加粗</b>、<i>斜体</i>、<u>下划线</u>、<s>删除线</s>
-> 无序列表标签：<ul><li>无序列表1</li>  <li>无序列表2</li></ul>
-> 有序列表：<ol><li><li></ol>
-> 表格：<table border='1'><tr><th></th></tr><tr><td></td></tr></table>
+```
+html文件开头输入！号可以不用自己手动输入<!DOCTYPE html>、<html></html><head></head><body></body></html>
+<b>字体加粗</b>、<i>斜体</i>、<u>下划线</u>、<s>删除线</s>
+无序列表标签：<ul><li>无序列表1</li>  <li>无序列表2</li></ul>
+有序列表：<ol><li><li></ol>
+表格：<table border='1'><tr><th></th></tr><tr><td></td></tr></table>
+```
 
 # HTML属性
 属性用于定元素的行为和外观，以及与其他元素的关系
 - 基本语法：<开始标签 属性名='属性值'>
 - 每个HTML元素可以具有不同的属性
 - 属性名称不区分大小写，属性值对大小写敏感
-- 适用于大多数HTML元素的属性：class:为HTML元素定义一个或多个类名；id:定义元素唯一的id；style：规定元素的行内样式
-- <a herf='' target=''>： a标签有一个herf属性，可以是其他网页的URL路径；target可以选择在新的链接中打开还是其他形式的链接打开
-- <br>是换行标签，<hr>水平分割线标签，这两个都可以换行
-- <img src='' alt='' width='' height=''>: src属性表示文件的路径，可以是相对路径，也可以是绝对路径，也可以是url。alt属性是，如果图像无法加载，浏览器就会显示出来alt属性中指定的文本。width和height设置图片显示的宽高
-
+```
+适用于大多数HTML元素的属性：class:为HTML元素定义一个或多个类名；id:定义元素唯一的id；style：规定元素的行内样式
+<a herf='' target=''>： a标签有一个herf属性，可以是其他网页的URL路径；target可以选择在新的链接中打开还是其他形式的链接打开
+<br>是换行标签，<hr>水平分割线标签，这两个都可以换行
+<img src='' alt='' width='' height=''>: src属性表示文件的路径，可以是相对路径，也可以是绝对路径，也可以是url。alt属性是，如果图像无法加载，浏览器就会显示出来alt属性中指定的文本。width和height设置图片显示的宽高
+```
 # HtML区块
 根据元素的表现形式，可以分为行内元素和块元素
 ```
@@ -56,4 +59,37 @@ HTML全称是Hypertext Markup Language（超文本标记语言），其通过一
 - <input type='radio' name=''>规定单选
 <img width="918" height="664" alt="image" src="https://github.com/user-attachments/assets/aebb0964-a402-4580-8c6d-b9601907ae8b" />
 
-- 
+
+# CSS
+CSS全名是Cascading Style，中文名：层叠样式表。用于定义网页样式和布局的样式表语言。通过CSS，可以指定页面中各个元素的颜色、字体、大小、间距、边框、背景等样式，从而实现更精确的页面设计
+```
+CSS语法：
+CSS通常由选择器、属性和属性值组成，多个规则可以组合在一起，以便同时应用多个样式
+选择器{
+  属性1：属性值1；
+  属性2：属性值2；
+}
+1、选择题的声明中可以写无数条属性
+2、声明的每一行属性，都需要以英文分号结尾
+3、声明中的所有属性和值都是以键值对这种形式出现
+例如：
+p{
+  color:blue;
+  font_size: 16px; 
+}
+```
+CSS三种导入方式，优先级：内联样式>内部样式表>外部样式表
+- 1、内联样式          <h1 style="color:red">
+- 2、内部样式表        写在style里
+- 3、外部样式表
+
+# 选择器，
+选择器就是用于选择要应用样式HTML元素，可以选择所有元素，特定元素，或者是特定的类，特定的ID等等
+- 元素选择器
+- 类选择器 ：以.开头
+- ID选择器: 以#号开头
+- 通用选择器： 以*号开头
+- 子元素选择器 .father>.son
+- 后代选择器  .father grandson
+- 并集选择器
+- 伪类选择器
